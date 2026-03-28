@@ -1,0 +1,59 @@
+
+# DSU source server (the IP that publishes controller data)
+dsu:
+  host: "127.0.0.1"
+  port: 26760
+  slot: 0
+
+# Local UDP bind for this client bridge
+network:
+  local_ip: "0.0.0.0"
+  local_port: 0
+  socket_timeout_sec: 0.02
+
+# Runtime behavior
+runtime:
+  subscription_interval_sec: 2.0
+  connection_timeout_sec: 5.0
+  # If packets pause, recenter both sticks after this short gap (0 disables).
+  recenter_on_packet_gap_sec: 0.2
+  # Radial deadzone for both sticks (0.0 to 0.4). Good start: 0.08-0.15.
+  deadzone: 0.1
+  # DSU uses Y positive=up, while many virtual gamepads expect Y positive=down.
+  invert_stick_y: true
+  # Disable this if your DSU source uses only D-Pad and you want direct D-Pad passthrough.
+  map_dpad: true
+  # Prevent Steam/menu "arrow key" behavior when your DSU source mirrors stick into D-Pad bits.
+  suppress_dpad_when_sticks_active: true
+  # Raw DSU threshold around center (0-127) used for D-Pad suppression.
+  dpad_suppress_threshold: 20
+  # Some DSU servers keep packet_number constant; keep this false unless needed.
+  skip_duplicate_packet_numbers: false
+  # Enable temporary raw stick logging for troubleshooting.
+  log_stick_raw:  false
+  log_stick_interval_sec: 0.2
+  log_level: "INFO"
+
+# Touch conversion from DSU range to DS4 touchpad range
+touch:
+  # Touchscreen size in pixels (3DS: 320x240). Coordinates are expected as 0..size-1.
+  source_max_x: 320
+  source_max_y: 240
+  target_max_x: 1919
+  target_max_y: 941
+  # Use touch position as right stick (enabled by default). When not touching, right stick is centered.
+  right_stick_enabled: false
+  # Invert Y for touch->right-stick mapping (normally false for top=up, bottom=down).
+  right_stick_invert_y: false
+  # If vgamepad has no DS4 touch API, map touch position to system mouse cursor.
+  mouse_fallback_enabled: true
+  # Some DSU sources do not expose a separate touch click. If true, active touch holds left click.
+  assume_touch_click: false
+  # Auto-detect incoming touch range for mouse fallback: source, target, or 0..65535.
+  mouse_auto_detect_input_range: true
+  # Manual mouse fallback input range override (set both > 0 to force exact mapping).
+  mouse_input_max_x: 0
+  mouse_input_max_y: 0
+  # Monitor used by mouse fallback (0 = primary monitor).
+  mouse_monitor_index: 0
+

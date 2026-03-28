@@ -1,0 +1,786 @@
+<!DOCTYPE html>
+<!-- saved from url=(0042)https://v1993.github.io/cemuhook-protocol/ -->
+<html lang="en-US"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width,maximum-scale=2">
+    <link rel="stylesheet" type="text/css" media="screen" href="./Introduction _ cemuhook-protocol_files/style.css">
+
+<!-- Begin Jekyll SEO tag v2.8.0 -->
+<title>Introduction | cemuhook-protocol</title>
+<meta name="generator" content="Jekyll v3.9.3">
+<meta property="og:title" content="Introduction">
+<meta property="og:locale" content="en_US">
+<meta name="description" content="Mostly complete cemuhook protocol reference">
+<meta property="og:description" content="Mostly complete cemuhook protocol reference">
+<link rel="canonical" href="https://v1993.github.io/cemuhook-protocol/">
+<meta property="og:url" content="https://v1993.github.io/cemuhook-protocol/">
+<meta property="og:site_name" content="cemuhook-protocol">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary">
+<meta property="twitter:title" content="Introduction">
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"WebSite","description":"Mostly complete cemuhook protocol reference","headline":"Introduction","name":"cemuhook-protocol","url":"https://v1993.github.io/cemuhook-protocol/"}</script>
+<!-- End Jekyll SEO tag -->
+
+    <!-- start custom head snippets, customize with your own _includes/head-custom.html file -->
+
+<!-- Setup Google Analytics -->
+
+
+
+<!-- You can set your favicon here -->
+<!-- link rel="shortcut icon" type="image/x-icon" href="/cemuhook-protocol/favicon.ico" -->
+
+<!-- end custom head snippets -->
+
+  </head>
+
+  <body>
+
+    <!-- HEADER -->
+    <div id="header_wrap" class="outer">
+        <header class="inner">
+          
+            <a id="forkme_banner" href="https://github.com/v1993/cemuhook-protocol">View on GitHub</a>
+          
+
+          <h1 id="project_title">cemuhook-protocol</h1>
+          <h2 id="project_tagline">Mostly complete cemuhook protocol reference</h2>
+
+          
+        </header>
+    </div>
+
+    <!-- MAIN CONTENT -->
+    <div id="main_content_wrap" class="outer">
+      <section id="main_content" class="inner">
+        <h1 id="introduction">Introduction</h1>
+
+<p>Cemuhook is modification for Cemu WiiU emulator which allow to do all sorts of cool stuff, including custom button/motion sources.<br>
+Purpose of this document is to shed light on previously undocumented protocol it uses.<br>
+<strong>Only one known and existing version of protocol at the moment of creation and last modification of this document is <code class="language-plaintext highlighter-rouge">1001</code> which is described below.</strong></p>
+
+<h2 id="common-information">Common information</h2>
+
+<ul>
+  <li>Cemuhook use UDP protocol, which may make things tricky but very efficient</li>
+  <li>Cemuhook use server at <code class="language-plaintext highlighter-rouge">localhost:26760</code> (number is a port)</li>
+  <li>Your application should serve all sources it can, not few different instances of it.</li>
+  <li>Each (valid) packet either from cemuhook or your server contain:</li>
+  <li>
+    <ul>
+      <li>Header (16 bytes)</li>
+    </ul>
+  </li>
+  <li>
+    <ul>
+      <li>Message type (4 bytes)</li>
+    </ul>
+  </li>
+  <li>
+    <ul>
+      <li>Other data</li>
+    </ul>
+  </li>
+</ul>
+
+<h2 id="numbers-encoding">Numbers encoding</h2>
+<p>You can refer to C# implementations of BitConverter for details on this.<br>
+Numbers are encoded as little endian, which is also native endian on most platforms in the world (but not all).</p>
+
+<h1 id="header-structure">Header structure</h1>
+
+<table>
+  <thead>
+    <tr>
+      <th>Offset</th>
+      <th>Length</th>
+      <th>Type</th>
+      <th>Meaning</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>0</td>
+      <td>4</td>
+      <td>String</td>
+      <td>Magic string — <code class="language-plaintext highlighter-rouge">DSUS</code> if it’s message by server (you), <code class="language-plaintext highlighter-rouge">DSUC</code> if by client (cemuhook).</td>
+    </tr>
+    <tr>
+      <td>4</td>
+      <td>2</td>
+      <td>Unsigned 16-bit</td>
+      <td>Protocol version used in message. Currently <code class="language-plaintext highlighter-rouge">1001</code>.</td>
+    </tr>
+    <tr>
+      <td>6</td>
+      <td>2</td>
+      <td>Unsigned 16-bit</td>
+      <td>Length of packet without header. Drop packet if it’s too short, truncate if it’s too long.</td>
+    </tr>
+    <tr>
+      <td>8</td>
+      <td>4</td>
+      <td>Unsigned 32-bit</td>
+      <td>CRC32 of whole packet while this field was zeroed out. Be careful with endianness here!</td>
+    </tr>
+    <tr>
+      <td>12</td>
+      <td>4</td>
+      <td>Unsigned 32-bit</td>
+      <td>Client or server ID who sent this packet. Should stay the same on one run. Can be randomly generated on startup.</td>
+    </tr>
+    <tr>
+      <td>16</td>
+      <td>4</td>
+      <td>Unsigned 32-bit</td>
+      <td><strong>Not actually part of header so it counts as length.</strong> Event type. Read below to learn possible ones.</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>Below I’ll refer to all positions <strong>after cutting out first 20 bytes and implying that structure above is included in your response at the beginning</strong>.</p>
+
+<h1 id="message-types">Message types</h1>
+
+<table>
+  <thead>
+    <tr>
+      <th>Value</th>
+      <th>Meaning</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">0x100000</code></td>
+      <td>Protocol version information (doesn’t seem to be ever requested)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">0x100001</code></td>
+      <td>Information about connected controllers</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">0x100002</code></td>
+      <td>Actual controllers data</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">0x110001</code></td>
+      <td>(Unofficial) Information about controller motors</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">0x110002</code></td>
+      <td>(Unofficial) Rumble controller motor</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>Same constants are used both for incoming and outgoing messages. So if you got message with some type, response(s) to it will have same type value.</p>
+
+<h2 id="protocol-version-information">Protocol version information</h2>
+
+<p>This message type carry no extra incoming payload and require you to reply with maximal protocol version supported.</p>
+
+<h3 id="incoming-packet-structure">Incoming packet structure</h3>
+
+<table>
+  <thead>
+    <tr>
+      <th>Offset</th>
+      <th>Length</th>
+      <th>Type</th>
+      <th>Meaning</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>-</td>
+      <td>-</td>
+      <td>-</td>
+      <td>No additional payload.</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3 id="outgoing-packet-structure">Outgoing packet structure:</h3>
+
+<table>
+  <thead>
+    <tr>
+      <th>Offset</th>
+      <th>Length</th>
+      <th>Type</th>
+      <th>Meaning</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>0</td>
+      <td>2</td>
+      <td>Unsigned 16-bit</td>
+      <td>Maximal protocol version supported by your application.</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="shared-response-beginning-for-message-types-below">Shared response beginning for message types below</h2>
+
+<p>Both “Information about connected controllers” and “Actual controllers data” responses begin the same way that is described below:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Offset</th>
+      <th>Length</th>
+      <th>Type</th>
+      <th>Meaning</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>0</td>
+      <td>1</td>
+      <td>Unsigned 8-bit</td>
+      <td>Slot you’re reporting about. Must be the same as byte value you read.</td>
+    </tr>
+    <tr>
+      <td>1</td>
+      <td>1</td>
+      <td>Unsigned 8-bit</td>
+      <td>Slot state: <code class="language-plaintext highlighter-rouge">0</code> if not connected, <code class="language-plaintext highlighter-rouge">1</code> if reserved (?), <code class="language-plaintext highlighter-rouge">2</code> if connected.</td>
+    </tr>
+    <tr>
+      <td>2</td>
+      <td>1</td>
+      <td>Unsigned 8-bit</td>
+      <td>Device model: <code class="language-plaintext highlighter-rouge">0</code> if not applicable, <code class="language-plaintext highlighter-rouge">1</code> if no or partial gyro <code class="language-plaintext highlighter-rouge">2</code> for full gyro. Value <code class="language-plaintext highlighter-rouge">3</code> exist but should not be used (go with VR, guys).</td>
+    </tr>
+    <tr>
+      <td>3</td>
+      <td>1</td>
+      <td>Unsigned 8-bit</td>
+      <td>Connection type: <code class="language-plaintext highlighter-rouge">0</code> if not applicable, <code class="language-plaintext highlighter-rouge">1</code> for USB, <code class="language-plaintext highlighter-rouge">2</code> for bluetooth.</td>
+    </tr>
+    <tr>
+      <td>4</td>
+      <td>6</td>
+      <td><strong>Unsigned 48-bit</strong></td>
+      <td>MAC address of device. It’s used to detect same device between launches. Zero out if not applicable.</td>
+    </tr>
+    <tr>
+      <td>10</td>
+      <td>1</td>
+      <td>Unsigned 8-bit</td>
+      <td>Battery status. See below for possible values.</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>This structure is 11 bytes long.</p>
+
+<h3 id="battery-values">Battery values</h3>
+
+<table>
+  <thead>
+    <tr>
+      <th>Value</th>
+      <th>Meaning</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">0x00</code></td>
+      <td>Not applicable</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">0x01</code></td>
+      <td>Dying</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">0x02</code></td>
+      <td>Low</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">0x03</code></td>
+      <td>Medium</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">0x04</code></td>
+      <td>High</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">0x05</code></td>
+      <td>Full (or almost)</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">0xEE</code></td>
+      <td>Charging</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">0xEF</code></td>
+      <td>Charged</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="information-about-connected-controllers">Information about connected controllers</h2>
+
+<p>This request type is a bit more complicated. When you receive it, you should report all controllers you serve (up to four).<br>
+This message have length of 12 bytes (32 total with structure from above).<br>
+If controller for some port is not connected, you can respond with 12 zero bytes (plus header).</p>
+
+<h3 id="incoming-packet-structure-1">Incoming packet structure</h3>
+
+<table>
+  <thead>
+    <tr>
+      <th>Offset</th>
+      <th>Length</th>
+      <th>Type</th>
+      <th>Meaning</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>0</td>
+      <td>4</td>
+      <td><strong>Signed 32-bit</strong></td>
+      <td>Amount of ports you should report about. Always less than 5.</td>
+    </tr>
+    <tr>
+      <td>4</td>
+      <td>1 to 4</td>
+      <td>Unsigned 8-bit (array)</td>
+      <td>Each byte represent number of slot you should report about. Count of bytes here is determined by value above. Each value is less than 4.</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>For every requested controller slot you should send one packet structured like described below.</p>
+
+<h3 id="outgoing-packet-structure-1">Outgoing packet structure:</h3>
+
+<table>
+  <thead>
+    <tr>
+      <th>Offset</th>
+      <th>Length</th>
+      <th>Type</th>
+      <th>Meaning</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>0</td>
+      <td>11</td>
+      <td>Complex</td>
+      <td>Beginning described above</td>
+    </tr>
+    <tr>
+      <td>11</td>
+      <td>1</td>
+      <td>N/A</td>
+      <td>Zero byte (<code class="language-plaintext highlighter-rouge">\0</code>).</td>
+    </tr>
+  </tbody>
+</table>
+
+<h1 id="actual-controllers-data">Actual controllers data</h1>
+
+<p>When you get this type of message, no instant response is required. Instead, you should begin or continue sending data from requested controller to this server. There is no way to know when client is gone, so you should implement some kind of timeout to stop sending data when client didn’t requested data for some time.</p>
+
+<p>If requested controller is not connected, message should be ignored.</p>
+
+<p>Total message length (<em>with packet header</em>) is 100 bytes.</p>
+
+<h3 id="incoming-packet-structure-2">Incoming packet structure</h3>
+
+<table>
+  <thead>
+    <tr>
+      <th>Offset</th>
+      <th>Length</th>
+      <th>Type</th>
+      <th>Meaning</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>0</td>
+      <td>1</td>
+      <td>Unsigned 8-bit</td>
+      <td>Bitmask of actions you should take. Valid flags are <code class="language-plaintext highlighter-rouge">1</code> for slot-based registration, <code class="language-plaintext highlighter-rouge">2</code> for MAC-based registration, no bits (all set to <code class="language-plaintext highlighter-rouge">0</code>) to subscribe to all controllers.</td>
+    </tr>
+    <tr>
+      <td>1</td>
+      <td>1</td>
+      <td>Unsigned 8-bit</td>
+      <td>If slot-based registration is requested, slot to report about.</td>
+    </tr>
+    <tr>
+      <td>2</td>
+      <td>6</td>
+      <td><strong>Unsigned 48-bit</strong></td>
+      <td>If MAC-based registration is requested, MAC of device to report about.</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3 id="outgoing-packet-structure-2">Outgoing packet structure:</h3>
+
+<p>Bitmasks are described in descending order:, as bits in number go: <code class="language-plaintext highlighter-rouge">128</code>, <code class="language-plaintext highlighter-rouge">64</code>, <code class="language-plaintext highlighter-rouge">32</code> and so on.<br>
+All sticks use full 8-bit range (0-255). Set them to <code class="language-plaintext highlighter-rouge">128</code> for neutral value.<br>
+Analog buttons use full range as well. If button is not analog, report <code class="language-plaintext highlighter-rouge">0</code> for released and <code class="language-plaintext highlighter-rouge">255</code> for pressed states.<br>
+Acceleration values are in g’s (1 g ≈ 9.8 m/s²), gyroscope ones are in deg/s.<br>
+There is no standard range for touch values aside from requirement to have x axis point rightward and y to point downward. Clients interested in using touch input should implement some sort of calibration method to determine touch range.</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Offset</th>
+      <th>Length</th>
+      <th>Type</th>
+      <th>Meaning</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>0</td>
+      <td>11</td>
+      <td>Complex</td>
+      <td>Beginning described above</td>
+    </tr>
+    <tr>
+      <td>11</td>
+      <td>1</td>
+      <td>Unsigned 8-bit</td>
+      <td>Is controller connected (<code class="language-plaintext highlighter-rouge">1</code> if connected, <code class="language-plaintext highlighter-rouge">0</code> if not)</td>
+    </tr>
+    <tr>
+      <td>12</td>
+      <td>4</td>
+      <td>Unsigned 32-bit</td>
+      <td>Packet number (for this client)</td>
+    </tr>
+    <tr>
+      <td>16</td>
+      <td>1</td>
+      <td>Bitmask</td>
+      <td>D-Pad Left, D-Pad Down, D-Pad Right, D-Pad Up, Options (?), R3, L3, Share (?)</td>
+    </tr>
+    <tr>
+      <td>17</td>
+      <td>1</td>
+      <td>Bitmask</td>
+      <td>Y, B, A, X, R1, L1, R2, L2</td>
+    </tr>
+    <tr>
+      <td>18</td>
+      <td>1</td>
+      <td>Unsigned 8-bit</td>
+      <td>HOME Button (0 or 1)</td>
+    </tr>
+    <tr>
+      <td>19</td>
+      <td>1</td>
+      <td>Unsigned 8-bit</td>
+      <td>Touch Button (0 or 1)</td>
+    </tr>
+    <tr>
+      <td>20</td>
+      <td>1</td>
+      <td>Unsigned 8-bit</td>
+      <td>Left stick X (plus rightward)</td>
+    </tr>
+    <tr>
+      <td>21</td>
+      <td>1</td>
+      <td>Unsigned 8-bit</td>
+      <td>Left stick Y <strong>(plus upward)</strong></td>
+    </tr>
+    <tr>
+      <td>22</td>
+      <td>1</td>
+      <td>Unsigned 8-bit</td>
+      <td>Right stick X (plus rightward)</td>
+    </tr>
+    <tr>
+      <td>23</td>
+      <td>1</td>
+      <td>Unsigned 8-bit</td>
+      <td>Right stick Y <strong>(plus upward)</strong></td>
+    </tr>
+    <tr>
+      <td>24</td>
+      <td>1</td>
+      <td>Unsigned 8-bit</td>
+      <td>Analog D-Pad Left</td>
+    </tr>
+    <tr>
+      <td>25</td>
+      <td>1</td>
+      <td>Unsigned 8-bit</td>
+      <td>Analog D-Pad Down</td>
+    </tr>
+    <tr>
+      <td>26</td>
+      <td>1</td>
+      <td>Unsigned 8-bit</td>
+      <td>Analog D-Pad Right</td>
+    </tr>
+    <tr>
+      <td>27</td>
+      <td>1</td>
+      <td>Unsigned 8-bit</td>
+      <td>Analog D-Pad Up</td>
+    </tr>
+    <tr>
+      <td>28</td>
+      <td>1</td>
+      <td>Unsigned 8-bit</td>
+      <td>Analog Y</td>
+    </tr>
+    <tr>
+      <td>29</td>
+      <td>1</td>
+      <td>Unsigned 8-bit</td>
+      <td>Analog B</td>
+    </tr>
+    <tr>
+      <td>30</td>
+      <td>1</td>
+      <td>Unsigned 8-bit</td>
+      <td>Analog A</td>
+    </tr>
+    <tr>
+      <td>31</td>
+      <td>1</td>
+      <td>Unsigned 8-bit</td>
+      <td>Analog X</td>
+    </tr>
+    <tr>
+      <td>32</td>
+      <td>1</td>
+      <td>Unsigned 8-bit</td>
+      <td>Analog R1</td>
+    </tr>
+    <tr>
+      <td>33</td>
+      <td>1</td>
+      <td>Unsigned 8-bit</td>
+      <td>Analog L1</td>
+    </tr>
+    <tr>
+      <td>34</td>
+      <td>1</td>
+      <td>Unsigned 8-bit</td>
+      <td>Analog R2</td>
+    </tr>
+    <tr>
+      <td>35</td>
+      <td>1</td>
+      <td>Unsigned 8-bit</td>
+      <td>Analog L2</td>
+    </tr>
+    <tr>
+      <td>36</td>
+      <td>6</td>
+      <td>Complex</td>
+      <td>First touch (see below)</td>
+    </tr>
+    <tr>
+      <td>42</td>
+      <td>6</td>
+      <td>Complex</td>
+      <td>Second touch (see below)</td>
+    </tr>
+    <tr>
+      <td>48</td>
+      <td>8</td>
+      <td>Unsigned 64-bit</td>
+      <td>Motion data timestamp in microseconds, update only with accelerometer (but not gyro only) changes</td>
+    </tr>
+    <tr>
+      <td>56</td>
+      <td>4</td>
+      <td>Float</td>
+      <td>Accelerometer X axis</td>
+    </tr>
+    <tr>
+      <td>60</td>
+      <td>4</td>
+      <td>Float</td>
+      <td>Accelerometer Y axis</td>
+    </tr>
+    <tr>
+      <td>64</td>
+      <td>4</td>
+      <td>Float</td>
+      <td>Accelerometer Z axis</td>
+    </tr>
+    <tr>
+      <td>68</td>
+      <td>4</td>
+      <td>Float</td>
+      <td>Gyroscope pitch</td>
+    </tr>
+    <tr>
+      <td>72</td>
+      <td>4</td>
+      <td>Float</td>
+      <td>Gyroscope yaw</td>
+    </tr>
+    <tr>
+      <td>76</td>
+      <td>4</td>
+      <td>Float</td>
+      <td>Gyroscope roll</td>
+    </tr>
+  </tbody>
+</table>
+
+<h4 id="touch-data-structure">Touch data structure</h4>
+
+<table>
+  <thead>
+    <tr>
+      <th>Offset</th>
+      <th>Length</th>
+      <th>Type</th>
+      <th>Meaning</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>0</td>
+      <td>1</td>
+      <td>Unsigned 8-bit</td>
+      <td>Is touch active (<code class="language-plaintext highlighter-rouge">1</code> if active, else <code class="language-plaintext highlighter-rouge">0</code>)</td>
+    </tr>
+    <tr>
+      <td>1</td>
+      <td>1</td>
+      <td>Unsigned 8-bit</td>
+      <td>Touch id (should be the same for one continuous touch)</td>
+    </tr>
+    <tr>
+      <td>2</td>
+      <td>2</td>
+      <td>Unsigned 16-bit</td>
+      <td>Touch X position</td>
+    </tr>
+    <tr>
+      <td>4</td>
+      <td>2</td>
+      <td>Unsigned 16-bit</td>
+      <td>Touch Y position</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="unofficial-information-about-controller-motors">(Unofficial) Information about controller motors</h2>
+
+<p>Query how many rumble motors specified controllers have.</p>
+
+<h3 id="incoming-packet-structure-3">Incoming packet structure</h3>
+
+<table>
+  <thead>
+    <tr>
+      <th>Offset</th>
+      <th>Length</th>
+      <th>Type</th>
+      <th>Meaning</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>0</td>
+      <td>8</td>
+      <td>Complex</td>
+      <td>Controller identification header, same as the incoming packet of “Actual controllers data”</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3 id="outgoing-packet-structure-3">Outgoing packet structure</h3>
+
+<table>
+  <thead>
+    <tr>
+      <th>Offset</th>
+      <th>Length</th>
+      <th>Type</th>
+      <th>Meaning</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>0</td>
+      <td>11</td>
+      <td>Complex</td>
+      <td>Beginning described above</td>
+    </tr>
+    <tr>
+      <td>11</td>
+      <td>1</td>
+      <td>Unsigned 8-bit</td>
+      <td>Motor count - common values are 0 (no rumble support), 1 (single motor), and 2 (left/right motors)</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="unofficial-rumble-controller-motor">(Unofficial) Rumble controller motor</h2>
+
+<p>Set rumble intensity for controller motor. Only incoming packet.</p>
+
+<p>Clients should periodically (twice to ten times per second) re-send rumble state (both zero and non-zero) to account for potential packet loss. Servers should reset motor’s rumble strength to zero if they haven’t received rumble packets for it for prolonged period of time (whatever you use for client timeout is a good estimate, which should be about 5 seconds) to avoid controllers getting stuck rumbling in the event client disconnects disgracefully.</p>
+
+<h3 id="incoming-packet-structure-4">Incoming packet structure</h3>
+
+<table>
+  <thead>
+    <tr>
+      <th>Offset</th>
+      <th>Length</th>
+      <th>Type</th>
+      <th>Meaning</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>0</td>
+      <td>8</td>
+      <td>Complex</td>
+      <td>Controller identification header, same as the incoming packet of “Actual controllers data”</td>
+    </tr>
+    <tr>
+      <td>8</td>
+      <td>1</td>
+      <td>Unsigned 8-bit</td>
+      <td>Motor id, 0~<code class="language-plaintext highlighter-rouge">motor count-1</code></td>
+    </tr>
+    <tr>
+      <td>9</td>
+      <td>1</td>
+      <td>Unsigned 8-bit</td>
+      <td>Motor vibration intensity, 0~255 (<code class="language-plaintext highlighter-rouge">0</code> means no vibration)</td>
+    </tr>
+  </tbody>
+</table>
+
+      </section>
+    </div>
+
+    <!-- FOOTER  -->
+    <div id="footer_wrap" class="outer">
+      <footer class="inner">
+        
+        <p class="copyright">cemuhook-protocol maintained by <a href="https://github.com/v1993">v1993</a></p>
+        
+        <p>Published with <a href="https://pages.github.com/">GitHub Pages</a></p>
+      </footer>
+    </div>
+  
+
+</body></html>
