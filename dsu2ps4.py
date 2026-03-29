@@ -69,6 +69,15 @@ class BridgeConfig:
 	recenter_on_packet_gap_sec: float = 0.2
 	deadzone: float = 0.03
 	invert_stick_y: bool = True
+	motion_enabled: bool = True
+	motion_gyro_scale: float = 16.0
+	motion_accel_scale: float = 8192.0
+	motion_axis_preset: str = "dualshock"
+	motion_invert_yaw: bool = False
+	motion_deadzone_dps: float = 0.0
+	motion_stream_raw_normalized: bool = True
+	motion_stream_interval_sec: float = 0.05
+	motion_normalize_range_dps: float = 720.0
 	map_dpad: bool = True
 	suppress_dpad_when_sticks_active: bool = True
 	dpad_suppress_threshold: int = 20
@@ -110,6 +119,13 @@ class ControllerFrame:
 	right_y: int
 	l2_analog: int
 	r2_analog: int
+	motion_timestamp_us: int
+	accel_x: float
+	accel_y: float
+	accel_z: float
+	gyro_pitch: float
+	gyro_yaw: float
+	gyro_roll: float
 	touch_1: TouchPoint
 	touch_2: TouchPoint
 
@@ -120,6 +136,17 @@ def clamp_int(value: int, low: int, high: int) -> int:
 
 def clamp_float(value: float, low: float, high: float) -> float:
 	return max(low, min(value, high))
+
+
+def to_i16(value: float, scale: float) -> int:
+	scaled = int(round(value * scale))
+	return clamp_int(scaled, -32768, 32767)
+
+
+def apply_axis_deadzone(value: float, deadzone: float) -> float:
+	if abs(value) < max(0.0, deadzone):
+		return 0.0
+	return value
 
 
 def as_int(value: Any, default: int) -> int:
@@ -145,6 +172,14 @@ def as_bool(value: Any, default: bool) -> bool:
 			return True
 		if lowered in {"0", "false", "no", "off"}:
 			return False
+	return default
+
+
+def as_motion_axis_preset(value: Any, default: str) -> str:
+	if isinstance(value, str):
+		preset = value.strip().lower()
+		if preset in {"dualshock", "dsu"}:
+			return preset
 	return default
 
 
@@ -206,6 +241,41 @@ def load_config(path: Path) -> BridgeConfig:
 		),
 		deadzone=clamp_float(as_float(runtime.get("deadzone"), 0.03), 0.0, 0.4),
 		invert_stick_y=as_bool(runtime.get("invert_stick_y"), True),
+		motion_enabled=as_bool(runtime.get("motion_enabled"), True),
+		motion_gyro_scale=clamp_float(
+			as_float(runtime.get("motion_gyro_scale"), 16.0),
+			0.1,
+			1000.0,
+		),
+		motion_accel_scale=clamp_float(
+			as_float(runtime.get("motion_accel_scale"), 8192.0),
+			0.1,
+			100000.0,
+		),
+		motion_axis_preset=as_motion_axis_preset(
+			runtime.get("motion_axis_preset"),
+			"dualshock",
+		),
+		motion_invert_yaw=as_bool(runtime.get("motion_invert_yaw"), False),
+		motion_deadzone_dps=clamp_float(
+			as_float(runtime.get("motion_deadzone_dps"), 0.0),
+			0.0,
+			20.0,
+		),
+		motion_stream_raw_normalized=as_bool(
+			runtime.get("motion_stream_raw_normalized"),
+			True,
+		),
+		motion_stream_interval_sec=clamp_float(
+			as_float(runtime.get("motion_stream_interval_sec"), 0.05),
+			0.01,
+			1.0,
+		),
+		motion_normalize_range_dps=clamp_float(
+			as_float(runtime.get("motion_normalize_range_dps"), 720.0),
+			10.0,
+			10000.0,
+		),
 		map_dpad=as_bool(runtime.get("map_dpad"), True),
 		suppress_dpad_when_sticks_active=as_bool(
 			runtime.get("suppress_dpad_when_sticks_active"),
@@ -293,6 +363,13 @@ def parse_controller_frame(payload: bytes) -> Optional[ControllerFrame]:
 
 	touch_1_active, touch_1_id, touch_1_x, touch_1_y = struct.unpack_from("<BBHH", payload, 36)
 	touch_2_active, touch_2_id, touch_2_x, touch_2_y = struct.unpack_from("<BBHH", payload, 42)
+	motion_timestamp_us = struct.unpack_from("<Q", payload, 48)[0]
+	accel_x = struct.unpack_from("<f", payload, 56)[0]
+	accel_y = struct.unpack_from("<f", payload, 60)[0]
+	accel_z = struct.unpack_from("<f", payload, 64)[0]
+	gyro_pitch = struct.unpack_from("<f", payload, 68)[0]
+	gyro_yaw = struct.unpack_from("<f", payload, 72)[0]
+	gyro_roll = struct.unpack_from("<f", payload, 76)[0]
 
 	return ControllerFrame(
 		slot=payload[0],
@@ -308,6 +385,13 @@ def parse_controller_frame(payload: bytes) -> Optional[ControllerFrame]:
 		right_y=payload[23],
 		r2_analog=payload[34],
 		l2_analog=payload[35],
+		motion_timestamp_us=motion_timestamp_us,
+		accel_x=accel_x,
+		accel_y=accel_y,
+		accel_z=accel_z,
+		gyro_pitch=gyro_pitch,
+		gyro_yaw=gyro_yaw,
+		gyro_roll=gyro_roll,
 		touch_1=TouchPoint(
 			active=touch_1_active != 0,
 			touch_id=touch_1_id,
@@ -576,6 +660,12 @@ class Ds4Mapper:
 		self.right_stick_range_mode: Optional[str] = None
 		self.right_stick_range_max_x = 1
 		self.right_stick_range_max_y = 1
+		self.extended_report = None
+		self.extended_report_available = False
+		self.motion_unavailable_warned = False
+		self.motion_update_failed_warned = False
+		self.motion_timestamp_counter = 0
+		self.motion_mapping_logged = False
 
 		self.buttons: Dict[str, Any] = {
 			"triangle": self.get_enum_member("DS4_BUTTONS", ["DS4_BUTTON_TRIANGLE"]),
@@ -646,6 +736,7 @@ class Ds4Mapper:
 
 		self.touch_method = self.find_touch_method()
 		self.touch_release_method = self.find_touch_release_method()
+		self._setup_extended_report()
 
 	@staticmethod
 	def get_enum_member(enum_name: str, candidate_names: list[str]) -> Any:
@@ -671,6 +762,123 @@ class Ds4Mapper:
 			if callable(method):
 				return method
 		return None
+
+	def _setup_extended_report(self) -> None:
+		update_extended = getattr(self.pad, "update_extended_report", None)
+		if not callable(update_extended):
+			return
+
+		try:
+			vigem_commons = vg.win.vigem_commons
+			report_ex_type = getattr(vigem_commons, "DS4_REPORT_EX", None)
+			if report_ex_type is None:
+				return
+
+			self.extended_report = report_ex_type()
+			init_report = getattr(vigem_commons, "DS4_REPORT_INIT", None)
+			if callable(init_report):
+				init_report(self.extended_report.Report)
+			self.extended_report_available = True
+		except Exception:
+			self.extended_report = None
+			self.extended_report_available = False
+
+	def _copy_basic_report_to_extended(self) -> None:
+		if self.extended_report is None:
+			return
+
+		src = self.pad.report
+		dst = self.extended_report.Report
+		dst.bThumbLX = src.bThumbLX
+		dst.bThumbLY = src.bThumbLY
+		dst.bThumbRX = src.bThumbRX
+		dst.bThumbRY = src.bThumbRY
+		dst.wButtons = src.wButtons
+		dst.bSpecial = src.bSpecial
+		dst.bTriggerL = src.bTriggerL
+		dst.bTriggerR = src.bTriggerR
+
+	def _apply_motion_to_extended_report(self, frame: ControllerFrame, cfg: BridgeConfig) -> None:
+		if self.extended_report is None:
+			return
+
+		report = self.extended_report.Report
+		self._copy_basic_report_to_extended()
+
+		# Mapeo directo y crudo para emular un hardware de PS4 físico
+		# Sin zonas muertas para mantener el feeling 1:1 real
+		gyro_pitch = frame.gyro_pitch
+		gyro_yaw = frame.gyro_yaw
+		gyro_roll = frame.gyro_roll
+
+		if cfg.motion_invert_yaw:
+			gyro_yaw = -gyro_yaw
+
+		if not self.motion_mapping_logged:
+			logging.info(
+				"Motion output set to RAW hardware emulation. invert_yaw=%s",
+				"on" if cfg.motion_invert_yaw else "off"
+			)
+			self.motion_mapping_logged = True
+
+		self.motion_timestamp_counter = (self.motion_timestamp_counter + 1) & 0xFFFF
+		report.wTimestamp = self.motion_timestamp_counter
+
+		# Mapeo Giroscopio PS4 Real:
+		# DS4 X = Pitch, Y = Yaw, Z = Roll
+		# Acabamos de confirmar que el mapeo correcto con memoria directa es Pitch positivo y Yaw positivo, 
+		# mientras que el Roll requería mantener su signo tal cual.
+		# (Anteriormente negamos todo, pero testeando en Steam vimos que el Pitch y Yaw quedaban invertidos físicamente).
+		gyro_x_i16 = to_i16(gyro_pitch, cfg.motion_gyro_scale)
+		gyro_y_i16 = to_i16(gyro_yaw, cfg.motion_gyro_scale)
+		gyro_z_i16 = to_i16(-gyro_roll, cfg.motion_gyro_scale)
+
+		# Mapeo Acelerómetro PS4 Real:
+		# DS4 X (Right/Left) = DSU X (Right/Left)
+		# DS4 Y (Up/Down) = DSU Y (Up/Down)
+		# DS4 Z (Forward/Back) = DSU Z (Forward/Back)
+		# En una PS4, Z positivo es hacia el usuario (hacia atrás). En DSU es hacia adelante,
+		# así que invertimos Z para que haga match 1:1 real.
+		accel_x_i16 = to_i16(frame.accel_x, cfg.motion_accel_scale)
+		accel_y_i16 = to_i16(frame.accel_y, cfg.motion_accel_scale)
+		accel_z_i16 = to_i16(-frame.accel_z, cfg.motion_accel_scale)
+
+		# FIX CRÍTICO: La librería vgamepad en Python tiene un bug de alineación de memoria ("struct padding") en DS4_REPORT_EX.
+		# A diferencia de Python donde wGyroX arranca en el offset 14 debido a alineaciones dudosas, 
+		# la estructura REAAAAAL en C empaquetada (#pragma pack) de ViGEm tiene wGyroX empezando en el offset 12.
+		# (wTimestamp 9-10, bBatteryLvl 11, entonces giroscopio = 12).
+		# Mi inyección anterior en 13 corría todo por 1 byte convirtiendo partes bajas en altas (valores enormes locos).
+		packed_imu_data = struct.pack(
+			"<hhhhhh",
+			gyro_x_i16, gyro_y_i16, gyro_z_i16,
+			accel_x_i16, accel_y_i16, accel_z_i16
+		)
+		ctypes.memmove(ctypes.addressof(self.extended_report) + 12, packed_imu_data, 12)
+
+	def push_report(self, frame: Optional[ControllerFrame], cfg: Optional[BridgeConfig]) -> None:
+		if cfg is not None and cfg.motion_enabled and self.extended_report_available and frame is not None:
+			try:
+				self._apply_motion_to_extended_report(frame, cfg)
+				self.pad.update_extended_report(self.extended_report)
+				return
+			except Exception as exc:
+				if not self.motion_update_failed_warned:
+					logging.warning(
+						"DS4 motion forwarding failed. Falling back to standard report updates: %s",
+						exc,
+					)
+					self.motion_update_failed_warned = True
+				self.extended_report_available = False
+
+		if cfg is not None and cfg.motion_enabled and not self.extended_report_available:
+			if not self.motion_unavailable_warned:
+				logging.warning(
+					"This vgamepad build has no DS4 extended report support. "
+					"Buttons/sticks work, but motion forwarding is unavailable."
+				)
+				self.motion_unavailable_warned = True
+
+		self.pad.update()
 
 	def set_button(self, name: str, pressed: bool) -> None:
 		button_value = self.buttons.get(name)
@@ -1320,12 +1528,12 @@ class Ds4Mapper:
 				)
 				self.touch_warned = True
 
-		self.pad.update()
+		self.push_report(frame, cfg)
 
 	def recenter_sticks(self) -> None:
 		self.set_joystick("left", 0, 0)
 		self.set_joystick("right", 0, 0)
-		self.pad.update()
+		self.push_report(None, None)
 
 	def release_all(self) -> None:
 		reset_method = getattr(self.pad, "reset", None)
@@ -1336,7 +1544,7 @@ class Ds4Mapper:
 			self.reset_mouse_touch_range_state()
 			self.reset_right_stick_touch_state()
 			self.mouse_monitor_index_applied = None
-			self.pad.update()
+			self.push_report(None, None)
 			self.button_state.clear()
 			self.special_button_state.clear()
 			self.last_dpad_state = None
@@ -1360,7 +1568,7 @@ class Ds4Mapper:
 		self.reset_mouse_touch_range_state()
 		self.reset_right_stick_touch_state()
 		self.mouse_monitor_index_applied = None
-		self.pad.update()
+		self.push_report(None, None)
 
 
 class DsuToPs4Bridge:
@@ -1376,6 +1584,7 @@ class DsuToPs4Bridge:
 		self.mapper = Ds4Mapper()
 		self.last_packet_number: Optional[int] = None
 		self.last_stick_log_time = 0.0
+		self.last_motion_stream_time = 0.0
 
 	def send_message(self, message_type: int, payload: bytes = b"") -> None:
 		packet = build_dsu_packet(self.client_id, message_type, payload)
@@ -1427,7 +1636,8 @@ class DsuToPs4Bridge:
 
 		logging.info(
 			"Stick raw L(%3d,%3d) R(%3d,%3d) norm L(%+.3f,%+.3f) R(%+.3f,%+.3f) "
-			"touch1(a=%d id=%d x=%d y=%d) touch2(a=%d id=%d x=%d y=%d) tclick=%d pkt=%s",
+			"touch1(a=%d id=%d x=%d y=%d) touch2(a=%d id=%d x=%d y=%d) "
+			"gyro(%+.2f,%+.2f,%+.2f)dps accel(%+.3f,%+.3f,%+.3f)g tclick=%d pkt=%s",
 			frame.left_x,
 			frame.left_y,
 			frame.right_x,
@@ -1444,8 +1654,48 @@ class DsuToPs4Bridge:
 			frame.touch_2.touch_id,
 			frame.touch_2.x,
 			frame.touch_2.y,
+			frame.gyro_pitch,
+			frame.gyro_yaw,
+			frame.gyro_roll,
+			frame.accel_x,
+			frame.accel_y,
+			frame.accel_z,
 			1 if frame.touchpad_click_pressed else 0,
 			frame.packet_number,
+		)
+
+	def maybe_stream_motion_raw_normalized(self, frame: ControllerFrame) -> None:
+		if not self.config.motion_stream_raw_normalized:
+			return
+
+		now = time.monotonic()
+		if (now - self.last_motion_stream_time) < self.config.motion_stream_interval_sec:
+			return
+
+		self.last_motion_stream_time = now
+		norm_range_dps = max(1.0, self.config.motion_normalize_range_dps)
+
+		raw_pitch_n = clamp_float(frame.gyro_pitch / norm_range_dps, -1.0, 1.0)
+		raw_yaw_n = clamp_float(frame.gyro_yaw / norm_range_dps, -1.0, 1.0)
+		raw_roll_n = clamp_float(frame.gyro_roll / norm_range_dps, -1.0, 1.0)
+
+		mapped_pitch_n = raw_pitch_n
+		mapped_yaw_n = -raw_yaw_n if self.config.motion_invert_yaw else raw_yaw_n
+		mapped_roll_n = raw_roll_n
+
+		# Match the raw hardware output layout we just set for _apply_motion_to_extended_report
+		out_x_n = -mapped_pitch_n
+		out_y_n = -mapped_yaw_n
+		out_z_n = -mapped_roll_n
+
+		logging.info(
+			"Motion raw normalized srcRaw(p,y,r)=(%+.3f,%+.3f,%+.3f) out(X,Y,Z)=(%+.3f,%+.3f,%+.3f)",
+			raw_pitch_n,
+			raw_yaw_n,
+			raw_roll_n,
+			out_x_n,
+			out_y_n,
+			out_z_n,
 		)
 
 	def run(self) -> None:
@@ -1533,6 +1783,7 @@ class DsuToPs4Bridge:
 
 			self.last_packet_number = frame.packet_number
 			self.maybe_log_sticks(frame)
+			self.maybe_stream_motion_raw_normalized(frame)
 			self.mapper.apply_frame(frame, self.config)
 
 	def close(self) -> None:

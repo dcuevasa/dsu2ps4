@@ -21,6 +21,26 @@ runtime:
   deadzone: 0.1
   # DSU uses Y positive=up, while many virtual gamepads expect Y positive=down.
   invert_stick_y: true
+  # Forward DSU accelerometer and gyroscope data to the virtual DS4 when supported.
+  motion_enabled: true
+  # Conversion from DSU gyro deg/s to DS4 short range units.
+  motion_gyro_scale: 16.0
+  # Conversion from DSU accel g to DS4 short range units.
+  motion_accel_scale: 8192.0
+  # Axis preset for DS4 gyro output:
+  # - dualshock: X=roll, Y=pitch, Z=yaw (recommended)
+  # - dsu:       X=pitch, Y=yaw, Z=roll (raw DSU order)
+  motion_axis_preset: dualshock
+  # Invert yaw if left/right turning is mirrored.
+  motion_invert_yaw: true
+  # Single deadzone for pitch/yaw/roll in deg/s.
+  motion_deadzone_dps: 0.0
+  # Stream normalized raw motion values continuously to logs.
+  motion_stream_raw_normalized: true
+  # Stream interval in seconds (0.05 = 20 lines/sec).
+  motion_stream_interval_sec: 0.05
+  # Normalization divisor in deg/s for motion log output.
+  motion_normalize_range_dps: 720.0
   # Disable this if your DSU source uses only D-Pad and you want direct D-Pad passthrough.
   map_dpad: true
   # Prevent Steam/menu "arrow key" behavior when your DSU source mirrors stick into D-Pad bits.
@@ -42,7 +62,7 @@ touch:
   target_max_x: 1919
   target_max_y: 941
   # Use touch position as right stick (enabled by default). When not touching, right stick is centered.
-  right_stick_enabled: false
+  right_stick_enabled: true
   # Invert Y for touch->right-stick mapping (normally false for top=up, bottom=down).
   right_stick_invert_y: false
   # If vgamepad has no DS4 touch API, map touch position to system mouse cursor.
@@ -55,5 +75,5 @@ touch:
   mouse_input_max_x: 0
   mouse_input_max_y: 0
   # Monitor used by mouse fallback (0 = primary monitor).
-  mouse_monitor_index: 0
+  mouse_monitor_index: 1
 

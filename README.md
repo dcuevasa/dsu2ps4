@@ -33,6 +33,15 @@ Edit `config.yaml`:
 - `dsu.slot`: DSU controller slot (`0` to `3`)
 - `runtime.recenter_on_packet_gap_sec`: recenter sticks if packet stream pauses briefly (`0` disables)
 - `runtime.invert_stick_y`: invert vertical stick axis (recommended `true` for most DSU sources)
+- `runtime.motion_enabled`: forward DSU gyro/accel to virtual DS4 using extended reports when available
+- `runtime.motion_gyro_scale`: conversion scale from DSU gyro deg/s to DS4 short units (default `16.0`)
+- `runtime.motion_accel_scale`: conversion scale from DSU accel g to DS4 short units (default `8192.0`)
+- `runtime.motion_axis_preset`: axis preset for DS4 gyro output (`dualshock` or `dsu`)
+- `runtime.motion_invert_yaw`: invert yaw if left/right turning is mirrored
+- `runtime.motion_deadzone_dps`: single deadzone for all gyro axes in deg/s
+- `runtime.motion_stream_raw_normalized`: stream normalized raw motion output to logs
+- `runtime.motion_stream_interval_sec`: interval for normalized motion stream logs
+- `runtime.motion_normalize_range_dps`: divisor used to normalize gyro deg/s to `[-1, 1]` in logs
 - `runtime.deadzone`: radial deadzone for both sticks (`0.0` to `0.4`, good start: `0.08`-`0.15`)
 - `runtime.map_dpad`: enable/disable DSU D-Pad mapping
 - `runtime.suppress_dpad_when_sticks_active`: avoids menu arrow movement when sticks are moved
@@ -96,6 +105,9 @@ python dsu2ps4.py --dsu-ip 192.168.1.50 --slot 0 --log-stick-raw --verbose
 - The touch warning means your current vgamepad build cannot inject DS4 touch coordinates. You can still play normally without touch.
 - With `touch.right_stick_enabled: true`, touch replaces right stick and returns it to center when no touch is active.
 - Physical sticks now follow strict DSU protocol decoding (`0..255`, center `128`) with radial deadzone and DS4-safe output mapping.
+- DSU motion data (gyro + accel) is now forwarded to the virtual DS4 through extended reports when your vgamepad build supports `DS4_REPORT_EX`.
+- Motion defaults now use a simplified preset system (`dualshock` by default) plus optional yaw inversion.
+- With `runtime.motion_stream_raw_normalized: true`, logs continuously print normalized raw gyro output for quick axis debugging.
 - Touch-to-right-stick now uses the same normalized/radial pipeline for smoother transitions.
 - Right-stick touch mode now tolerates DSU sources that do not set the touch `active` flag consistently by inferring activity from touch movement, touch ID, and touch-click.
 - Right-stick touch mode now auto-detects common input ranges (`320x240`, `1919x941`, `0..4095`, `0..65535`) to reduce calibration issues.
