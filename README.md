@@ -2,15 +2,31 @@
 
 DSU-to-PS4 bridge for Windows.
 
-This tool listens for incoming DSU controller data packets over UDP and maps them to a local virtual DualShock 4 using ViGEm/vgamepad.
+This tool listens to DSU controller packets over UDP and forwards them to a local virtual DualShock 4 using ViGEm/vgamepad.
+
+## Project Layout
+
+- `main.py`: application entrypoint (CLI and startup flow)
+- `logic/`: all runtime logic
+- `logic/models.py`: dataclasses and runtime config models
+- `logic/config.py`: YAML parsing and config loading
+- `logic/helpers.py`: math and conversion helpers
+- `logic/protocol.py`: DSU packet protocol encode/decode
+- `logic/mouse.py`: Windows touch-to-mouse fallback controller
+- `logic/mapper.py`: DSU frame to virtual DS4 mapping
+- `logic/bridge.py`: bridge runtime loop and DSU subscription lifecycle
+- `config.yaml`: editable runtime settings
 
 ## Features
 
-- Subscribes to a remote DSU server by IP and slot
-- Parses DSU controller packets (buttons, sticks, triggers, touch)
-- Forwards input to a virtual DualShock 4 (vgamepad)
-- Maps touch position to the right stick (enabled by default)
-- Touchpad click mapping + touch coordinate forwarding when supported by your vgamepad build
+- Subscribes to a DSU server by IP and slot
+- Parses DSU controller packets (buttons, sticks, triggers, touch, motion)
+- Forwards inputs to a virtual DualShock 4
+- Supports native DS4 touch coordinate forwarding when vgamepad exposes touch APIs
+- Optional touch-to-right-stick mode
+- Optional touch-to-mouse fallback mode
+- Gyro/accelerometer forwarding through DS4 extended reports
+- Raw motion byte packing workaround for vgamepad alignment issue
 
 ## Requirements
 
@@ -26,93 +42,94 @@ pip install -r requirements.txt
 
 ## Configuration
 
-Edit `config.yaml`:
+Edit `config.yaml`.
 
-- `dsu.host`: IP address of your DSU server
-- `dsu.port`: DSU UDP port (default `26760`)
-- `dsu.slot`: DSU controller slot (`0` to `3`)
-- `runtime.recenter_on_packet_gap_sec`: recenter sticks if packet stream pauses briefly (`0` disables)
-- `runtime.invert_stick_y`: invert vertical stick axis (recommended `true` for most DSU sources)
-- `runtime.motion_enabled`: forward DSU gyro/accel to virtual DS4 using extended reports when available
-- `runtime.motion_gyro_scale`: conversion scale from DSU gyro deg/s to DS4 short units (default `16.0`)
-- `runtime.motion_accel_scale`: conversion scale from DSU accel g to DS4 short units (default `8192.0`)
-- `runtime.motion_axis_preset`: axis preset for DS4 gyro output (`dualshock` or `dsu`)
-- `runtime.motion_invert_yaw`: invert yaw if left/right turning is mirrored
-- `runtime.motion_deadzone_dps`: single deadzone for all gyro axes in deg/s
-- `runtime.motion_stream_raw_normalized`: stream normalized raw motion output to logs
-- `runtime.motion_stream_interval_sec`: interval for normalized motion stream logs
-- `runtime.motion_normalize_range_dps`: divisor used to normalize gyro deg/s to `[-1, 1]` in logs
-- `runtime.deadzone`: radial deadzone for both sticks (`0.0` to `0.4`, good start: `0.08`-`0.15`)
-- `runtime.map_dpad`: enable/disable DSU D-Pad mapping
-- `runtime.suppress_dpad_when_sticks_active`: avoids menu arrow movement when sticks are moved
-- `runtime.dpad_suppress_threshold`: stick threshold (raw DSU units) for D-Pad suppression
-- `runtime.skip_duplicate_packet_numbers`: drop repeated packet counters (disabled by default)
-- `runtime.log_stick_raw`: debug raw stick values in logs
-- `runtime.log_stick_interval_sec`: interval for raw stick logs
-- `touch.source_max_x` / `touch.source_max_y`: touchscreen size in pixels (for 3DS, `320` and `240`; valid coordinates are `0..size-1`)
-- `touch.target_max_x` / `touch.target_max_y`: outgoing DS4 touch range
-- `touch.right_stick_enabled`: map touch to right stick (default `true`); when not touching, right stick stays centered
-- `touch.right_stick_invert_y`: invert Y only for touch-to-right-stick mode
-- `touch.mouse_fallback_enabled`: map touch to system mouse when DS4 touch API is unavailable
-- `touch.assume_touch_click`: hold mouse left click while touch is active (for DSU sources without separate touch-click)
-- `touch.mouse_auto_detect_input_range`: auto-detect touch input range for mouse fallback
-- `touch.mouse_input_max_x` / `touch.mouse_input_max_y`: force manual input range for mouse fallback
-- `touch.mouse_monitor_index`: monitor index used by mouse fallback (`0` = primary)
+### dsu
 
-For 3DS-sized touch screens, `source_max_x: 320` and `source_max_y: 240` are good defaults.
+- `host`: DSU server IP
+- `port`: DSU UDP port (default `26760`)
+- `slot`: DSU slot (`0..3`)
+
+### runtime
+
+- `debug_log`: enable verbose runtime motion logging
+- `deadzone`: radial stick deadzone (`0.0..0.4`)
+- `invert_left_stick_y`: invert left/right stick Y axis mapping
+- `motion_enabled`: forward gyro/accel to DS4 extended report when available
+- `invert_gyro_pitch`, `invert_gyro_yaw`, `invert_gyro_roll`: gyro axis inversion toggles
+- `invert_accel_x`, `invert_accel_y`, `invert_accel_z`: accel axis inversion toggles
+
+Optional advanced runtime keys supported by the loader:
+
+- `log_stick_raw`
+- `skip_duplicate_packet_numbers`
+- `subscription_interval_sec`
+- `connection_timeout_sec`
+- `recenter_on_packet_gap_sec`
+- `log_stick_interval_sec`
+- `map_dpad`
+- `suppress_dpad_when_sticks_active`
+- `dpad_suppress_threshold`
+- `invert_stick_y` (alias of `invert_left_stick_y`)
+
+### touch
+
+- `source_max_x`, `source_max_y`: DSU touch input bounds
+- `target_max_x`, `target_max_y`: DS4 touch target bounds
+- `right_stick_enabled`: when `true`, touch controls right stick
+- `invert_right_stick_y`: invert Y only for touch-to-right-stick mode
+- `mouse_fallback_enabled`: use Windows mouse when DS4 touch API is unavailable
+- `assume_touch_click`: hold left click while touch is active
+- `mouse_monitor_index`: monitor index for mouse fallback
+
+Optional advanced touch keys supported by the loader:
+
+- `mouse_auto_detect_input_range`
+- `mouse_input_max_x`
+- `mouse_input_max_y`
 
 ## Run
 
+Start with defaults:
+
 ```bash
-python dsu2ps4.py
+python main.py
 ```
 
 Useful overrides:
 
 ```bash
-python dsu2ps4.py --dsu-ip 192.168.1.50 --slot 0 --verbose
+python main.py --dsu-ip 192.168.1.50 --slot 0 --verbose
 ```
 
 Force click while touching (mouse fallback mode):
 
 ```bash
-python dsu2ps4.py --dsu-ip 192.168.1.50 --slot 0 --assume-touch-click
+python main.py --dsu-ip 192.168.1.50 --slot 0 --assume-touch-click
 ```
 
 Use monitor 1 for mouse fallback:
 
 ```bash
-python dsu2ps4.py --dsu-ip 192.168.1.50 --slot 0 --mouse-monitor 1
+python main.py --dsu-ip 192.168.1.50 --slot 0 --mouse-monitor 1
 ```
 
-Disable touch-to-right-stick and use normal touch behavior:
+Use native DS4 touchpad behavior (disable touch-to-right-stick):
 
 ```bash
-python dsu2ps4.py --dsu-ip 192.168.1.50 --slot 0 --no-touch-right-stick
+python main.py --dsu-ip 192.168.1.50 --slot 0 --no-touch-right-stick
 ```
 
-Joystick troubleshooting (raw packet logging):
+Enable raw stick debug output:
 
 ```bash
-python dsu2ps4.py --dsu-ip 192.168.1.50 --slot 0 --log-stick-raw --verbose
+python main.py --dsu-ip 192.168.1.50 --slot 0 --log-stick-raw --verbose
 ```
 
 ## Notes
 
-- The script renews DSU subscription automatically.
-- If no data is received for a while, all virtual controls are released.
-- If your vgamepad version does not expose touch coordinate APIs, touchpad click still works.
-- The touch warning means your current vgamepad build cannot inject DS4 touch coordinates. You can still play normally without touch.
-- With `touch.right_stick_enabled: true`, touch replaces right stick and returns it to center when no touch is active.
-- Physical sticks now follow strict DSU protocol decoding (`0..255`, center `128`) with radial deadzone and DS4-safe output mapping.
-- DSU motion data (gyro + accel) is now forwarded to the virtual DS4 through extended reports when your vgamepad build supports `DS4_REPORT_EX`.
-- Motion defaults now use a simplified preset system (`dualshock` by default) plus optional yaw inversion.
-- With `runtime.motion_stream_raw_normalized: true`, logs continuously print normalized raw gyro output for quick axis debugging.
-- Touch-to-right-stick now uses the same normalized/radial pipeline for smoother transitions.
-- Right-stick touch mode now tolerates DSU sources that do not set the touch `active` flag consistently by inferring activity from touch movement, touch ID, and touch-click.
-- Right-stick touch mode now auto-detects common input ranges (`320x240`, `1919x941`, `0..4095`, `0..65535`) to reduce calibration issues.
-- If moving a stick also behaves like menu arrows, keep `suppress_dpad_when_sticks_active: true` (or set `map_dpad: false`).
-- With `touch.mouse_fallback_enabled: true`, DSU touch controls the Windows cursor as a fallback.
-- If touch does not cover full screen, set `touch.mouse_input_max_x` and `touch.mouse_input_max_y` to your real DSU range (examples: `320x240`, `1919x941`, `65535x65535`).
-- Monitor order for `touch.mouse_monitor_index`: primary monitor first (`0`), then remaining monitors sorted top-left.
-- If joystick movement is still noisy near center, increase `runtime.deadzone` slightly (for example from `0.10` to `0.12`).
+- The bridge renews DSU subscriptions automatically.
+- If no DSU data is received for a while, virtual controls are released.
+- If your vgamepad build does not expose DS4 touch APIs, touchpad click still works.
+- For native PS4 touch behavior, keep `touch.right_stick_enabled: false`.
+- `dsu2ps4.py` remains as a compatibility wrapper and calls `main.py`.
